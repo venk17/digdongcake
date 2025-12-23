@@ -16,7 +16,7 @@ const UPI_CONFIG = {
 
 // Admin URL Configuration
 const ADMIN_CONFIG = {
-  adminUrl: process.env.ADMIN_DASHBOARD_URL || 'https://dingdongcakebake.vercel.app/admin',
+  adminUrl: process.env.ADMIN_DASHBOARD_URL || 'http://localhost:5173/admin',
   businessName: 'Ding Dong Cake & Bake'
 };
 
@@ -514,7 +514,7 @@ export const sendOrderNotifications = async (order) => {
 
     if (process.env.BUSINESS_EMAIL && emailTransporter) {
       try {
-        sendBusinessEmailNotification(order, customerInfo);
+        await sendBusinessEmailNotification(order, customerInfo);
         notifications.businessEmailSent = true;
       } catch (error) {
         console.warn('⚠️ Business email skipped:', error.message);
