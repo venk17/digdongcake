@@ -18,41 +18,37 @@ router.get('/', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const order = await Order.findById(req.params.id);
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
+    if (!order) return res.status(404).json({ message: 'Order not found' });
     res.json(order);
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
-// Create order
+// Create order (notifications in background)
 router.post('/', async (req, res) => {
   try {
     const order = new Order(req.body);
     const savedOrder = await order.save();
-    
-    // Send conditional notifications based on customer contact info
-    try {
-      const notificationResults = await sendOrderNotifications(savedOrder);
-      console.log('Notification results:', notificationResults);
-      
-      // Optional: Update order with notification status
-      savedOrder.notifications = {
-        whatsappSent: notificationResults.whatsappSent,
-        emailSent: notificationResults.emailSent,
-        businessWhatsappSent: notificationResults.businessWhatsappSent,
-        businessEmailSent: notificationResults.businessEmailSent,
-        sentAt: new Date()
-      };
-      await savedOrder.save();
-      
-    } catch (notificationError) {
-      console.error('Notification error:', notificationError);
-      // Don't fail the order creation if notifications fail
-    }
-    
+
+    // Send notifications asynchronously
+    sendOrderNotifications(savedOrder)
+      .then(results => {
+        console.log('Notification results:', results);
+        // Optional: update notification status in DB
+        Order.findByIdAndUpdate(savedOrder._id, {
+          notifications: {
+            whatsappSent: results.whatsappSent,
+            emailSent: results.emailSent,
+            businessWhatsappSent: results.businessWhatsappSent,
+            businessEmailSent: results.businessEmailSent,
+            sentAt: new Date()
+          }
+        }).exec();
+      })
+      .catch(err => console.error('Notification error:', err));
+
+    // Immediate response to frontend
     res.status(201).json(savedOrder);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -62,14 +58,8 @@ router.post('/', async (req, res) => {
 // Update order status
 router.put('/:id', async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true }
-    );
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
+    const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!order) return res.status(404).json({ message: 'Order not found' });
     res.json(order);
   } catch (error) {
     res.status(400).json({ message: error.message });
@@ -80,9 +70,7 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
-    if (!order) {
-      return res.status(404).json({ message: 'Order not found' });
-    }
+    if (!order) return res.status(404).json({ message: 'Order not found' });
     res.json({ message: 'Order deleted successfully' });
   } catch (error) {
     res.status(500).json({ message: error.message });
