@@ -19,21 +19,19 @@ const Checkout = () => {
     landmark: '',
     deliveryInstructions: '',
     paymentMethod: 'COD',
-    deliveryOption: 'delivery' // 'delivery' or 'self-pickup' (CHANGED from 'pickup')
+    deliveryType: 'delivery'
   });
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryTime, setDeliveryTime] = useState('30-45 min');
 
   // Calculate fees and totals
   const subtotal = getCartTotal();
-  const tax = subtotal * 0.05; // 5% tax
-  const total = formData.deliveryOption === 'delivery' ? subtotal + deliveryFee + tax : subtotal + tax;
+  const tax = subtotal * 0.05;
+  const total = formData.deliveryType === 'delivery' ? subtotal + deliveryFee + tax : subtotal + tax;
 
   useEffect(() => {
-    // Calculate delivery fee based on subtotal
     setDeliveryFee(subtotal > 500 ? 0 : 49);
     
-    // Estimate delivery time based on order size
     const itemCount = getCartItemsCount();
     if (itemCount > 5) {
       setDeliveryTime('45-60 min');
@@ -61,7 +59,7 @@ const Checkout = () => {
       toast.error('Please enter a valid 10-digit mobile number');
       return false;
     }
-    if (formData.deliveryOption === 'delivery' && !formData.address.trim()) {
+    if (formData.deliveryType === 'delivery' && !formData.address.trim()) {
       toast.error('Please enter your delivery address');
       return false;
     }
@@ -80,46 +78,110 @@ const Checkout = () => {
     setLoading(true);
     
     try {
-      // ✅ Fixed: Correct data structure with proper enum values
+      // Prepare items array
+      const items = cartItems.map(item => ({
+        _id: item._id || '000000000000000000000001',
+        name: item.name,
+        price: Number(item.price),
+        quantity: Number(item.quantity),
+        ...(item.image && { image: item.image }),
+        ...(item.weight && { weight: item.weight })
+      }));
+
+      // Calculate total FRESH to avoid any state issues
+      const calculatedSubtotal = getCartTotal();
+      const calculatedTax = calculatedSubtotal * 0.05;
+      const calculatedTotal = formData.deliveryType === 'delivery' 
+        ? calculatedSubtotal + deliveryFee + calculatedTax 
+        : calculatedSubtotal + calculatedTax;
+
+      // Build order data EXACTLY matching schema
       const orderData = {
-        items: cartItems.map(item => ({
-          _id: item._id,
-          name: item.name,
-          price: item.price,
-          quantity: item.quantity,
-          image: item.image,
-          ...(item.weight && { weight: item.weight })
-        })),
+        items: items,
         customerInfo: {
-          ...formData,
-          deliveryType: formData.deliveryOption // Now 'self-pickup' instead of 'pickup'
+          name: formData.name.trim(),
+          mobile: formData.mobile.trim(),
+          email: formData.email.trim().toLowerCase() || '',
+          address: formData.deliveryType === 'delivery' ? formData.address.trim() : 'Store Pickup',
+          landmark: formData.landmark.trim() || '',
+          deliveryInstructions: formData.deliveryInstructions.trim() || '',
+          deliveryType: formData.deliveryType
         },
-        subtotal,
-        deliveryFee: formData.deliveryOption === 'delivery' ? deliveryFee : 0,
-        tax,
-        total,
-        // Map payment method to match schema enum ['COD', 'Online']
-        paymentMethod: formData.paymentMethod === 'CARD' ? 'Online' : formData.paymentMethod,
+        subtotal: Number(calculatedSubtotal.toFixed(2)),
+        deliveryFee: formData.deliveryType === 'delivery' ? Number(deliveryFee) : 0,
+        tax: Number(calculatedTax.toFixed(2)),
+        total: Number(calculatedTotal.toFixed(2)),
+        paymentMethod: formData.paymentMethod,
         status: 'pending',
-        estimatedDelivery: formData.deliveryOption === 'delivery' ? deliveryTime : 'Ready for pickup'
+        estimatedDelivery: formData.deliveryType === 'delivery' ? deliveryTime : 'Ready for pickup'
       };
 
-      console.log('Sending order to deployed backend...', orderData);
+      // Clean up empty optional fields
+      if (!orderData.customerInfo.email) delete orderData.customerInfo.email;
+      if (!orderData.customerInfo.landmark) delete orderData.customerInfo.landmark;
+      if (!orderData.customerInfo.deliveryInstructions) delete orderData.customerInfo.deliveryInstructions;
+
+      console.log('📦 FINAL Order Data:', JSON.stringify(orderData, null, 2));
+
+      const response = await axios.post(
+        'https://digdongcake.onrender.com/api/orders', 
+        orderData,
+        {
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          timeout: 15000
+        }
+      );
       
-      // ✅ Use the FULL deployed backend URL
-      const response = await axios.post('https://digdongcake.onrender.com/api/orders', orderData);
+      console.log('✅ Order placed successfully:', response.data);
       
       clearCart();
       toast.success('Order placed successfully!');
       navigate(`/success/${response.data._id}`);
-    } catch (error) {
-      console.error('Error placing order:', error);
       
-      // Show specific error message
-      if (error.response?.data?.message) {
-        toast.error(`Error: ${error.response.data.message}`);
+    } catch (error) {
+      console.error('❌ Order error:', error);
+      
+      if (error.response) {
+        console.error('📡 Response:', error.response.data);
+        
+        // The backend is still rejecting - this means the backend route has an issue
+        if (error.response.data.error?.includes('total')) {
+          console.log(`
+🚨 CRITICAL ISSUE DETECTED:
+The frontend is sending correct data, but the backend route handler has a problem.
+          
+Check your backend route at: routes/orderRoutes.js
+          
+Run this test to confirm:
+curl -X POST https://digdongcake.onrender.com/api/orders \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "items": [{
+      "_id": "000000000000000000000001",
+      "name": "Test Cake",
+      "price": 100,
+      "quantity": 1
+    }],
+    "customerInfo": {
+      "name": "Test User",
+      "mobile": "9876543210",
+      "deliveryType": "delivery",
+      "address": "Test Address"
+    },
+    "total": 100,
+    "paymentMethod": "COD",
+    "status": "pending"
+  }'
+          `);
+        }
+        
+        toast.error('Order failed. Please check backend logs.');
+      } else if (error.request) {
+        toast.error('Network error. Please check your connection.');
       } else {
-        toast.error('Failed to place order. Please try again.');
+        toast.error('Error: ' + error.message);
       }
     } finally {
       setLoading(false);
@@ -139,9 +201,9 @@ const Checkout = () => {
       icon: Wallet
     },
     {
-      id: 'CARD',
-      name: 'Credit/Debit Card',
-      description: 'Pay securely with your card',
+      id: 'Online',
+      name: 'Online Payment',
+      description: 'Pay securely with UPI/Card',
       icon: CreditCard
     }
   ];
@@ -156,7 +218,7 @@ const Checkout = () => {
       fee: deliveryFee === 0 ? 'Free' : `₹${deliveryFee}`
     },
     {
-      id: 'self-pickup', // ✅ CHANGED from 'pickup' to 'self-pickup'
+      id: 'self-pickup',
       name: 'Self Pickup',
       description: 'Pick up your order from our store',
       icon: Store,
@@ -181,7 +243,6 @@ const Checkout = () => {
           </div>
         </div>
 
-        {/* ✅ Wrap EVERYTHING in a single form tag */}
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Checkout Form */}
@@ -204,7 +265,7 @@ const Checkout = () => {
                     <label
                       key={option.id}
                       className={`flex items-start space-x-4 p-4 rounded-lg border-2 cursor-pointer transition-all ${
-                        formData.deliveryOption === option.id
+                        formData.deliveryType === option.id
                           ? theme === 'dark'
                             ? 'border-amber-500 bg-amber-500/10'
                             : 'border-amber-500 bg-amber-50'
@@ -215,9 +276,9 @@ const Checkout = () => {
                     >
                       <input
                         type="radio"
-                        name="deliveryOption"
+                        name="deliveryType"
                         value={option.id}
-                        checked={formData.deliveryOption === option.id}
+                        checked={formData.deliveryType === option.id}
                         onChange={handleInputChange}
                         className="mt-1 text-amber-600 focus:ring-amber-500"
                       />
@@ -252,7 +313,7 @@ const Checkout = () => {
                 </div>
 
                 {/* Store Address for Pickup */}
-                {formData.deliveryOption === 'self-pickup' && ( // ✅ CHANGED from 'pickup'
+                {formData.deliveryType === 'self-pickup' && (
                   <div className={`mt-4 p-4 rounded-lg ${
                     theme === 'dark' ? 'bg-gray-700' : 'bg-amber-50'
                   }`}>
@@ -281,7 +342,7 @@ const Checkout = () => {
               </div>
 
               {/* Delivery Information - Only show for delivery option */}
-              {formData.deliveryOption === 'delivery' && (
+              {formData.deliveryType === 'delivery' && (
                 <div className={`p-6 rounded-xl shadow-sm border ${
                   theme === 'dark' 
                     ? 'bg-gray-800 border-gray-700' 
@@ -448,7 +509,7 @@ const Checkout = () => {
               )}
 
               {/* Contact Information for Pickup */}
-              {formData.deliveryOption === 'self-pickup' && ( // ✅ CHANGED from 'pickup'
+              {formData.deliveryType === 'self-pickup' && (
                 <div className={`p-6 rounded-xl shadow-sm border ${
                   theme === 'dark' 
                     ? 'bg-gray-800 border-gray-700' 
@@ -602,7 +663,7 @@ const Checkout = () => {
 
                 <div className="space-y-4 mb-6 max-h-80 overflow-y-auto">
                   {cartItems.map((item) => (
-                    <div key={item._id} className="flex justify-between items-start space-x-3">
+                    <div key={item._id || item.id} className="flex justify-between items-start space-x-3">
                       <div className="flex items-start space-x-3 flex-1">
                         <img
                           src={item.image}
@@ -646,7 +707,7 @@ const Checkout = () => {
                     <span>₹{subtotal.toFixed(2)}</span>
                   </div>
                   
-                  {formData.deliveryOption === 'delivery' && (
+                  {formData.deliveryType === 'delivery' && (
                     <div className={`flex justify-between ${
                       theme === 'dark' ? 'text-gray-300' : 'text-gray-600'
                     }`}>
@@ -662,7 +723,7 @@ const Checkout = () => {
                     <span>₹{tax.toFixed(2)}</span>
                   </div>
 
-                  {formData.deliveryOption === 'delivery' && subtotal < 500 && (
+                  {formData.deliveryType === 'delivery' && subtotal < 500 && (
                     <div className={`text-sm p-2 rounded text-center ${
                       theme === 'dark' ? 'bg-amber-900/30 text-amber-300' : 'bg-amber-50 text-amber-700'
                     }`}>
@@ -699,11 +760,10 @@ const Checkout = () => {
                       theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
                     }`}>
                       <Clock className="h-3 w-3" />
-                      <span>{formData.deliveryOption === 'delivery' ? 'Fast Delivery' : 'Quick Pickup'}</span>
+                      <span>{formData.deliveryType === 'delivery' ? 'Fast Delivery' : 'Quick Pickup'}</span>
                     </div>
                   </div>
 
-                  {/* ✅ Button INSIDE form with type="submit" */}
                   <button
                     type="submit"
                     disabled={loading}
@@ -722,6 +782,12 @@ const Checkout = () => {
                       `Place Order • ₹${total.toFixed(2)}`
                     )}
                   </button>
+
+                  <p className={`text-xs text-center mt-3 ${
+                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    By placing your order, you agree to our Terms of Service
+                  </p>
                 </div>
               </div>
             </div>

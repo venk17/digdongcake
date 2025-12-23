@@ -1,105 +1,37 @@
-import mongoose from 'mongoose';
+import express from 'express';
+import Order from '../models/Order.js';
 
-const orderSchema = new mongoose.Schema({
-  items: [{
-    _id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Product',
-      required: true
-    },
-    name: {
-      type: String,
-      required: true
-    },
-    price: {
-      type: Number,
-      required: true
-    },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1
-    },
-    image: String,
-    weight: String
-  }],
-  customerInfo: {
-    name: {
-      type: String,
-      required: true,
-      trim: true
-    },
-    mobile: {
-      type: String,
-      required: true
-    },
-    email: {
-      type: String,
-      trim: true,
-      lowercase: true
-    },
-    address: {
-      type: String,
-      required: function() {
-        return this.deliveryType === 'delivery';
-      }
-    },
-    landmark: String,
-    deliveryInstructions: String,
-    deliveryType: {
-      type: String,
-      enum: ['delivery', 'self-pickup'],
-      default: 'delivery'
-    }
-  },
-  total: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  subtotal: {
-    type: Number,
-    min: 0
-  },
-  deliveryFee: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  tax: {
-    type: Number,
-    default: 0,
-    min: 0
-  },
-  paymentMethod: {
-    type: String,
-    enum: ['COD', 'Online'],
-    default: 'COD'
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'confirmed', 'preparing', 'ready', 'out for delivery', 'delivered', 'cancelled'],
-    default: 'pending'
-  },
-  estimatedDelivery: String,
-  orderDate: {
-    type: Date,
-    default: Date.now
-  },
-  notifications: {
-    whatsappSent: Boolean,
-    emailSent: Boolean,
-    businessWhatsappSent: Boolean,
-    businessEmailSent: Boolean,
-    sentAt: Date
+const router = express.Router();
+
+// Create a new order
+router.post('/orders', async (req, res) => {
+  try {
+    console.log('📥 Received order data:', JSON.stringify(req.body, null, 2));
+    
+    // Create order with the exact data from request
+    const order = new Order(req.body);
+    
+    // Save order
+    await order.save();
+    
+    console.log('✅ Order saved successfully:', order._id);
+    
+    res.status(201).json({
+      success: true,
+      message: 'Order created successfully',
+      data: order
+    });
+    
+  } catch (error) {
+    console.error('❌ Error creating order:', error);
+    
+    res.status(400).json({
+      success: false,
+      message: 'Failed to create order',
+      error: error.message,
+      details: error.errors ? Object.values(error.errors).map(err => err.message) : []
+    });
   }
-}, {
-  timestamps: true
 });
 
-// Add index for better query performance
-orderSchema.index({ createdAt: -1 });
-orderSchema.index({ 'customerInfo.mobile': 1 });
-orderSchema.index({ status: 1 });
-
-export default mongoose.model('Order', orderSchema);
+export default router;
