@@ -30,7 +30,7 @@ const OrderDetails = () => {
     const fetchOrder = async () => {
       try {
         setLoading(true);
-        const res = await axios.get(`https://dingdong-0v1c.onrender.com/api/orders/${orderId}`);
+        const res = await axios.get(`https://digdongcake.onrender.com/api/orders/${orderId}`);
         setOrder(res.data);
       } catch (err) {
         console.error("Failed to fetch order:", err);

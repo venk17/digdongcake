@@ -40,7 +40,7 @@ const ProductDetails = () => {
 
   const fetchProduct = async () => {
     try {
-      const response = await axios.get(`https://dingdong-0v1c.onrender.com/api/products/${id}`);
+      const response = await axios.get(`https://digdongcake.onrender.com/api/products/${id}`);
       setProduct(response.data);
     } catch (error) {
       console.error('Error fetching product:', error);

@@ -53,7 +53,7 @@ const Menu = () => {
 
   const fetchProducts = async () => {
     try {
-      const response = await axios.get('https://dingdong-0v1c.onrender.com/api/products');
+      const response = await axios.get('https://digdongcake.onrender.com/api/products');
       setProducts(response.data);
     } catch (error) {
       console.error('Error fetching products:', error);
