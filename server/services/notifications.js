@@ -514,7 +514,7 @@ export const sendOrderNotifications = async (order) => {
 
     if (process.env.BUSINESS_EMAIL && emailTransporter) {
       try {
-        await sendBusinessEmailNotification(order, customerInfo);
+        sendBusinessEmailNotification(order, customerInfo);
         notifications.businessEmailSent = true;
       } catch (error) {
         console.warn('⚠️ Business email skipped:', error.message);

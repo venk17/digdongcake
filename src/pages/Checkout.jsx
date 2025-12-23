@@ -19,7 +19,7 @@ const Checkout = () => {
     landmark: '',
     deliveryInstructions: '',
     paymentMethod: 'COD',
-    deliveryOption: 'delivery' // 'delivery' or 'pickup'
+    deliveryOption: 'delivery' // 'delivery' or 'self-pickup' (CHANGED from 'pickup')
   });
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [deliveryTime, setDeliveryTime] = useState('30-45 min');
@@ -80,86 +80,50 @@ const Checkout = () => {
     setLoading(true);
     
     try {
-      // Create a clean customerInfo object with proper field names
-      const customerInfo = {
-        name: formData.name.trim(),
-        mobile: formData.mobile.trim(),
-        email: formData.email?.trim() || '',
-        address: formData.address?.trim() || '',
-        landmark: formData.landmark?.trim() || '',
-        deliveryInstructions: formData.deliveryInstructions?.trim() || '',
-        // ✅ CRITICAL FIX: Match backend schema enum values exactly
-        deliveryType: formData.deliveryOption === 'delivery' ? 'delivery' : 'self-pickup', // 'self-pickup' with hyphen
-        paymentMethod: formData.paymentMethod
-      };
-
-      // ✅ CRITICAL FIX: Use _id not productId
-      const processedItems = cartItems.map(item => ({
-        _id: item._id, // ✅ Must be _id to match schema
-        name: item.name,
-        price: parseFloat(item.price),
-        quantity: item.quantity,
-        image: item.image,
-        ...(item.weight && { weight: item.weight })
-      }));
-
+      // ✅ Fixed: Correct data structure with proper enum values
       const orderData = {
-        items: processedItems,
-        customerInfo: customerInfo,
-        subtotal: parseFloat(subtotal.toFixed(2)),
+        items: cartItems.map(item => ({
+          _id: item._id,
+          name: item.name,
+          price: item.price,
+          quantity: item.quantity,
+          image: item.image,
+          ...(item.weight && { weight: item.weight })
+        })),
+        customerInfo: {
+          ...formData,
+          deliveryType: formData.deliveryOption // Now 'self-pickup' instead of 'pickup'
+        },
+        subtotal,
         deliveryFee: formData.deliveryOption === 'delivery' ? deliveryFee : 0,
-        tax: parseFloat(tax.toFixed(2)),
-        total: parseFloat(total.toFixed(2)),
-        paymentMethod: formData.paymentMethod,
+        tax,
+        total,
+        // Map payment method to match schema enum ['COD', 'Online']
+        paymentMethod: formData.paymentMethod === 'CARD' ? 'Online' : formData.paymentMethod,
         status: 'pending',
-        estimatedDelivery: formData.deliveryOption === 'delivery' ? deliveryTime : 'Ready for pickup',
-        orderDate: new Date().toISOString()
+        estimatedDelivery: formData.deliveryOption === 'delivery' ? deliveryTime : 'Ready for pickup'
       };
 
-      console.log('Sending order data:', JSON.stringify(orderData, null, 2));
-
+      console.log('Sending order to deployed backend...', orderData);
+      
+      // ✅ Use the FULL deployed backend URL
       const response = await axios.post('https://digdongcake.onrender.com/api/orders', orderData);
       
-      console.log('✅ Order created successfully:', response.data);
-      
-      // Clear cart immediately
       clearCart();
-      
-      // Show success toast
-      toast.success('Order placed successfully! Redirecting...', { duration: 800 });
-      
-      // ✅ CRITICAL FIX: Use window.location.href instead of navigate()
-      // This forces a full page reload and bypasses React Router issues
-      setTimeout(() => {
-        window.location.href = `/success/${response.data._id}`;
-      }, 1000);
-      
+      toast.success('Order placed successfully!');
+      navigate(`/success/${response.data._id}`);
     } catch (error) {
-      console.error('Order placement error details:');
-      console.error('Full error:', error);
+      console.error('Error placing order:', error);
       
-      if (error.response) {
-        console.error('Response status:', error.response.status);
-        console.error('Response data:', error.response.data);
-        
-        // Show specific error message
-        if (error.response.data && error.response.data.message) {
-          toast.error(`Error: ${error.response.data.message}`);
-        } else {
-          toast.error('Failed to place order. Please try again.');
-        }
-      } else if (error.request) {
-        console.error('No response received:', error.request);
-        toast.error('No response from server. Check your internet connection.');
+      // Show specific error message
+      if (error.response?.data?.message) {
+        toast.error(`Error: ${error.response.data.message}`);
       } else {
-        console.error('Request setup error:', error.message);
-        toast.error('Failed to setup request.');
+        toast.error('Failed to place order. Please try again.');
       }
-      
-      // Only set loading to false on error
+    } finally {
       setLoading(false);
     }
-    // NO finally block - page will navigate on success
   };
 
   if (cartItems.length === 0) {
@@ -192,7 +156,7 @@ const Checkout = () => {
       fee: deliveryFee === 0 ? 'Free' : `₹${deliveryFee}`
     },
     {
-      id: 'pickup',
+      id: 'self-pickup', // ✅ CHANGED from 'pickup' to 'self-pickup'
       name: 'Self Pickup',
       description: 'Pick up your order from our store',
       icon: Store,
@@ -217,7 +181,7 @@ const Checkout = () => {
           </div>
         </div>
 
-        {/* ✅ FORM WRAPPING EVERYTHING */}
+        {/* ✅ Wrap EVERYTHING in a single form tag */}
         <form onSubmit={handleSubmit}>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
             {/* Checkout Form */}
@@ -288,7 +252,7 @@ const Checkout = () => {
                 </div>
 
                 {/* Store Address for Pickup */}
-                {formData.deliveryOption === 'pickup' && (
+                {formData.deliveryOption === 'self-pickup' && ( // ✅ CHANGED from 'pickup'
                   <div className={`mt-4 p-4 rounded-lg ${
                     theme === 'dark' ? 'bg-gray-700' : 'bg-amber-50'
                   }`}>
@@ -484,7 +448,7 @@ const Checkout = () => {
               )}
 
               {/* Contact Information for Pickup */}
-              {formData.deliveryOption === 'pickup' && (
+              {formData.deliveryOption === 'self-pickup' && ( // ✅ CHANGED from 'pickup'
                 <div className={`p-6 rounded-xl shadow-sm border ${
                   theme === 'dark' 
                     ? 'bg-gray-800 border-gray-700' 
@@ -739,7 +703,7 @@ const Checkout = () => {
                     </div>
                   </div>
 
-                  {/* ✅ SUBMIT BUTTON WITH TYPE="SUBMIT" */}
+                  {/* ✅ Button INSIDE form with type="submit" */}
                   <button
                     type="submit"
                     disabled={loading}
